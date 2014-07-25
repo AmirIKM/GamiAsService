@@ -1,0 +1,15 @@
+﻿<Properties>
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" PreferredExecutionTarget="MonoDevelop.Default" />
+  <MonoDevelop.Ide.Workbench ActiveDocument="Assets\Scripts\AchievementController.cs">
+    <Files>
+      <File FileName="Assets\Scripts\Test.cs" Line="13" Column="5" />
+      <File FileName="Assets\Scripts\Achievement.cs" Line="4" Column="1" />
+      <File FileName="Assets\Scripts\AchievementController.cs" Line="108" Column="88" />
+      <File FileName="Assets\Scripts\ShowHideDescription.cs" Line="35" Column="1" />
+    </Files>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+</Properties>
