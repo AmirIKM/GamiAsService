@@ -1,0 +1,247 @@
+//Author: Dr. Philipp Herzig
+
+grammar org.xtext.example.mydsl.MyDsl with org.eclipse.xtext.common.Terminals
+
+generate mydsl "http://www.sap.com/gamification/GamL"
+
+import "http://www.eclipse.org/emf/2002/Ecore" as ecore
+
+
+
+Model: 'concept' name=ID '{' (type+=Element)* '}';
+	 
+Element: GameLevel | Point | Skill | Mission | Role | Leaderboard | Level | Good | Badge | Event;
+
+GameLevel: 'gameLevel' name = ID '{'
+              'name' '=' dName = STRING ',' 'completed' condition=When
+              (',' clearOpenMissions ?= 'completeOpenMissions')? 
+              (',' 'followUpGameLevel' '=' followUpGameLevel = [GameLevel])?
+              (',' 'description' '=' description = STRING)? (type+=Element)* '}';
+
+Event: class=EventClass name=ID (body=EventBody)?;
+
+EventClass: 'useraction' | 'internalevent' | 'externalevent';
+
+EventBody: '{' data=EventData (inverseEvent = InverseEvent)? '}';
+
+EventData: 'properties' '{' name += Field (',' name+=Field)* '}';
+
+InverseEvent: 'inverseEvent' '{' 'name' '=' name = ID ',' 'joins on' '=' field=[Field] '}';
+
+Field: name = ID ':' dType=DATATYPE;
+
+Badge: 'badge' name = ID '{' ('name' '=' dName = STRING)
+		(',' 'description' '=' description = STRING)? (',' 'image' '=' image = STRING)
+		(',' ^hidden ?= 'hidden')? rules+=When? '}';
+
+
+Point: 'point' name = ID '{'
+		default ?= 'default'? ('name' '=' dName = STRING)
+		(',' 'description' '=' description = STRING)? 
+		(',' 'abbreviation' '=' abbreviation = STRING)?
+		(',' internal ?= 'internal')? (',' 'type' '=' type=POINTTYPE)?
+		(rules+=Rule)* '}';
+
+POINTTYPE: name = ('ADVANCING' | 'REDEEMABLE' | 'KARMA' | 'SKILLPOINT' | 'AUXILIARY') | (name = 'REPUTATION' '[' repFrom=INT ',' repTo=INT ']');
+
+Mission: 'mission' name = ID '{'
+		('name' '=' dName = STRING) (',' 'description' '=' description = STRING)		
+		(',' 'available' condition=When)?
+		((',' 'initiatedBy' '=' ('rule' | 'user')))? 	
+		(('not')? rules+=Rule (('or' | 'not')? rules+=Rule)*) '}';
+
+//MissionExpression:  'not'? parentMission+=[Mission] ('strong' | 'weak')? ((('and' | 'or') parentMission+=[Mission] ('strong' | 'weak')?) | (('and' | 'or')  'not' parentMission+=[Mission]))*;
+
+Skill: 'skill' name = ID '{'
+		('name' '=' dName = STRING)
+		(',' 'description' '=' description = STRING)
+		(',' 'image' '=' image = STRING)
+		(',' 'benefit' '=' benefit = STRING)
+		(',' 'point' '=' point=[Point])
+		((',' 'available' 'for' time=TIME)?) '}';
+		//(',' conditions+=When)* '}';
+
+Level: 'level' name = ID '{' 'name' '=' dName = STRING ',' 
+		'threshold' '=' threshold=(NUMERICOPERAND) point=[Point]
+		(',' 'image' '=' imagePath = STRING)? '}';
+
+Good: 'good' name = ID '{'
+          'name' '=' dName = STRING (',' 'description' '=' description = STRING)
+          (',' 'image' '=' image = STRING) (',' goodType=GoodType)?
+          (',' 'price' '=' price=NUMERICOPERAND point = [Point])? '}';
+
+GoodType: 'type' '=' name = ('REAL' | 'VIRTUAL');
+
+
+Role: 'role' name = ID '{''name' '=' dName = STRING ',' 
+          (('skills' '{' skills += [Skill] ((',' skills+=[Skill])*) '}')?)
+          ('description' '=' description = STRING)?
+          ('image' '=' image = STRING)? '}';
+
+Leaderboard: 'leaderboard' name = ID '{' 
+		'name' '=' dName = STRING ',' 'point' '=' point=[Point]
+		',' 'aggregation' '=' aggregation=AGGREGATION 
+		',' 'order' '=' order=('ascending' | 'descending') 
+		(',' 'assembles' '=' ('player' | 'team'))? '}';
+
+
+Rule: when=When then=Then;
+
+When: 'when' ((entity=PlayerEntity '{' ('validFrom' '=' date+=DATE)?
+				('validTo' '=' date+=DATE)? 	boolExp=PlayerOr
+			'}') | (TeamEntity '{' ('validFrom' '=' date+=DATE)?
+			('validTo' '=' date+=DATE)?	boolExp=TeamOr '}'));
+
+PlayerEntity: name='player' var=EntityVariable?;
+
+TeamEntity: name='team' var=EntityVariable?;
+
+EntityVariable: name=ID;
+
+Then: 'then' '{' (consequences+=Consequence) ((',' consequences+=Consequence)*) '}';
+
+Consequence: consequences+=EventRefCons | consequences+=GeneralRefCons | consequences+=PointRefCons | consequences+=Notification | consequences+=Narration;
+
+PlayerOr returns Expression: PlayerAnd ({PlayerOr.left = current} op='or' right=PlayerAnd)*;
+
+PlayerAnd returns Expression: PlayerTopElem ({PlayerAnd.left = current} op='and' right=PlayerTopElem)*;
+
+PlayerTopElem returns Expression: PlayerAtom | '(' PlayerOr ')' | PlayerNegation;
+
+PlayerNegation returns Expression: 'not' not=PlayerTopElem;
+
+PlayerAtom returns Expression: atom=PlayerCondition;
+
+TeamOr returns Expression: TeamAnd ({TeamOr.left = current} op='or' right=TeamAnd)*;
+
+TeamAnd returns Expression:	TeamTopElem ({TeamAnd.left = current} op='and' right=TeamTopElem)*;
+
+TeamTopElem returns Expression: TeamAtom | '(' TeamOr ')' | TeamNegation;
+
+TeamNegation returns Expression:	'not' not=TeamTopElem ;
+
+TeamAtom returns Expression: atom=TeamCondition ;
+
+TeamCondition returns Condition: condition = Condition | ('has' entity = PlayerEntity 'who' '{' condition = PlayerOr '}');
+
+PlayerCondition returns Condition: condition = Condition | ('has' condition=RoleRefs) | ('did' condition=EventDef) | ('belongs' 'to' entity = TeamEntity 'which' '{' condition = TeamOr '}') | ('another' 'player' 'did' condition=EventDef);
+
+Condition: ('has' (BadgeRefs | PointRefs | LevelRefs | ItemRefs | SkillRefs | MissionRefs)) | ('has' (BadgeRef | PointRef | LevelRef | ItemRef | SkillRef | MissionRef)) | ('has' Luck) | ('is' Leader) | ('is' 'at' LocationDef);
+
+EventDef: (name = ID ':')? eventCond=EventCondition;
+
+EventCondition:	ec=EventClass (type=[Event]) (',' 'lastsFor' lastsFor=TIME)?
+	(',' (field+=[Field] | 'player') rightTerm+=RIGHTTERM )* 
+	(',' 'this' temp+=TEMPORAL (var+=[EventDef] | date+=DATE))*
+	((',' ((agg=AGGREGATION '(' field+=[Field] ')' | aggr='COUNT' '(' event=[EventDef] ')') 
+	comp+=COMPARATOR numExpr=NUMEXPR)? 
+	('within' within=TIME)?)?);
+	
+//(',' 'occurs' comp+=COMPARATOR occurs=INT)?
+
+Luck: 'luck' 'P(' prob = NUMEXPR ')';
+
+MissionRefs: 'missions' '{'	missions += MissionItem (',' missions+=MissionItem)* '}';
+
+MissionRef: 'mission' MissionItem;
+
+MissionItem: mission = [Mission] ('available' | 'completed')?;
+
+LevelRefs: 'levels' '{'	levels += [Level] (',' levels+=[Level])* '}';
+
+LevelRef: 'level' level = [Level];
+
+SkillRefs: 'skills' '{' skills += SkillItem (',' skills+=SkillItem)* '}';
+
+SkillRef: 'skill' SkillItem;
+
+SkillItem: skill=[Skill] ('level' '=' level=INT)? ('active')?;
+
+ItemRefs: 'goods' '{' items += [Good] (',' items+=[Good])* '}';
+
+ItemRef: 'good' item = [Good];
+
+RoleRefs: 'roles' '{' roles += [Role] (',' roles+=[Role])* '}';
+
+RoleRef: 'role' role = [Role];
+
+BadgeRefs: 'badges' '{' badges += [Badge] (',' badges+=[Badge])* '}';
+
+BadgeRef: 'badge' badge = [Badge];
+
+PointRefs: 'points' '{' 	points += [PointRefsElem] (',' points += [PointRefsElem] )*	'}';
+
+PointRefsElem: point = [Point] ',' agg = AGGREGATION comp = COMPARATOR exp = NUMEXPR;
+
+PointRef: 'point' point = [Point] ',' agg = AGGREGATION comp = COMPARATOR exp = NUMEXPR;
+
+LocationDef: 'location' '(' 'lat' latComp=COMPARATOR lat=NUMEXPR ',' 
+							'long' longComp=COMPARATOR long=NUMEXPR ')';
+
+Leader: 'top' '(' 'to' '=' to=NUMEXPR (',' 'from' '=' from=NUMEXPR)? 
+			   (',' 'leaderboard' '=' leaderboard=[Leaderboard]) ')';
+
+/*
+ * CONSEQUENCES
+ */
+EventRefCons: ('create' | 'delete') 'event' type=[Event] 
+			  ('('  fields+=[Field] '=' refs+=(NUMEXPR | EQUALITYTYPES) 
+			  		((',' fields+=[Field] '=' refs+=(NUMEXPR | EQUALITYTYPES))*) ')')?
+			  ('for' who=EntityCond)?;
+			  
+GeneralRefCons:	(action='give' ref=(BadgeRefCons|MissionRefCons|GoodRefCons|SkillRefCons) ('to' who=EntityCond)?) | (action='delete' ref=(BadgeRefCons|MissionRefCons|GoodRefCons|SkillRefCons) ('from' who=EntityCond)?);
+
+BadgeRefCons: 'badge' badge=[Badge];
+	
+MissionRefCons: 'mission' mission=[Mission];
+
+GoodRefCons: 'good' good=[Good];
+
+SkillRefCons: 'skill' skill=[Skill];
+
+PointRefCons: (action='give' points=NUMEXPR point=[Point]? ('to' who=EntityCond)?) | (action='remove' points=NUMEXPR point=[Point]? ('from' who=EntityCond)?) | (action='set' points=NUMEXPR  point=[Point]? ('for' who=EntityCond)?);
+
+Notification: ('notify' msg=STRING) ('to' who=EntityCond)? | ('notify' '('	('message' '=' msg=STRING) (',' 'title' '=' title=STRING)
+			  (',' 'image' '=' STRING )? 
+			  (',' 'type' '=' ( 'information' | 'corrective'))?
+			  ('to' who=EntityCond)? ')');
+
+EntityCond: entityID = [EntityVariable];
+
+Narration: ('narration' '(' ('name' '=' dName=STRING ',' 'description' '=' description=STRING)
+				(',' 'recipient' '=' who=EntityCond)? (',' 'image' '=' icon=STRING )?
+				(',' 'video' '=' video=STRING )? (',' 'audio' '=' audio=STRING )? ')');
+
+RefOp: eventRef= [EventDef] '.' (var=[Field] | 'player');
+
+RIGHTTERM: ((comp=COMPARATOR (numop=NUMERICOPERAND | timeop=TIMEOPERAND)) |	('=' value=EQUALITYTYPES));
+
+EQUALITYTYPES:	string=STRING | bool = ('true' | 'false' );
+
+NUMERICOPERAND:  int=INT | d=DOUBLE | refOp=RefOp;
+
+TIMEOPERAND: now='NOW' | t=TIME;
+
+OPERATOR: '+' | '-' | '/' | '*' | '^' | '%';
+
+NUMEXPR: (operand1=NUMERICOPERAND (operator=OPERATOR operand2=NUMEXPR)?) | ( '(' innerOperand1=NUMERICOPERAND (innerOperator=OPERATOR innerOperand2=NUMEXPR)? ')' 
+		 (operator=OPERATOR operand2=NUMEXPR)?);
+
+TEMPORAL: name = ('before' | 'after' | 'coincidences' | 'during' | 'finishes' | 'finished by' | 'includes' | 'meets' | 'met by' | 'overlaps' | 'overlapped by' | 'starts' | 'started by');
+
+TIME: value=INT name = ('h' | 'min' | 's');
+
+COMPARATOR: name = ('>' | '<' | '<=' | '=' | '>=' | '<>');
+
+AGGREGATION: name = ('SUM' | 'MAX' | 'MIN');
+
+terminal DATE: '"' ('0'..'9') ('0'..'9') ('0'..'9') ('0'..'9') '-' ('0'|'1') ('0'..'9') '-' ('0'..'3') ('0'..'9') ('T' ('0'..'2') ('0'..'9') ':' ('0'..'5') ('0'..'9') (':'('0'..'5') ('0'..'9'))? ('.'('0'..'9')+)? ('Z'|(('+'|'-')('0'..'2') ('0'..'9') ':' ('0'..'5') ('0'..'9')?)))? '"';
+
+DATETYPE: ('Date' | 'Time');
+
+NUMTYPE: ('Number' | 'Decimal');
+
+DATATYPE: ('Boolean' | 'Text') | DATETYPE | NUMTYPE;
+
+terminal DOUBLE returns ecore::EDouble: ('0'..'9')+ '.' ('0'..'9')+;
+
